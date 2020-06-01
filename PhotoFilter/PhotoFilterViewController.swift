@@ -6,6 +6,7 @@ import Photos
 class PhotoFilterViewController: UIViewController {
     
     let context = CIContext(options: nil)
+    
     var originalImage: UIImage? {
         didSet {
             // resize the scaledImage and set it
@@ -39,14 +40,14 @@ class PhotoFilterViewController: UIViewController {
 	}
     
     
-    //    stub with default return.
+    //    stub with default return. 1
     private func filterImage(_ image: UIImage) -> UIImage? {
         
-        //UIImage -> CGImage -> CIImage
+        //UIImage -> CGImage -> CIImage 2
         guard let cgImage = image.cgImage else {return nil}
         let ciImage = CIImage(cgImage: cgImage)
         
-        
+        //3
         let filter = CIFilter(name: "CIColorControls")!
         //built in filtering.
 //        let filter2 = CIFilter.colorControls()
@@ -56,9 +57,10 @@ class PhotoFilterViewController: UIViewController {
         filter.setValue(saturationSlider.value, forKey: kCIInputSaturationKey)
         filter.setValue(brightnessSlider.value, forKey: kCIInputBrightnessKey)
         filter.setValue(contrastSlider.value, forKey: kCIInputContrastKey)
-        //CIImage -> CGImage -> UIImage
+        
+        //CIImage -> CGImage -> UIImage 4
         guard let outputCIImage = filter.outputImage else {return nil}
-        //render the image
+        //render the image 5
         guard let outputCGImage = context.createCGImage(outputCIImage,
                                                         from: CGRect(origin: .zero,
                                                                      size: image.size)) else {return nil}
