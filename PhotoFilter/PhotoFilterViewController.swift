@@ -4,147 +4,151 @@ import CoreImage.CIFilterBuiltins
 import Photos
 
 class PhotoFilterViewController: UIViewController {
+
+    private let context = CIContext(options: nil)
     
-    let context = CIContext(options: nil)
-    
-    var originalImage: UIImage? {
+    private var originalImage: UIImage? {
         didSet {
-            // resize the scaledImage and set it
-            guard let originalImage = originalImage else { return }
-            // Height and width
+            // 414 * 3 = 1,242 pixels (portrait on iPhone 11 Pro Max)
+            guard let originalImage = originalImage else {
+                scaledImage = nil // clear out image if set to nil
+                return
+            }
+            
             var scaledSize = imageView.bounds.size
-            let scale = UIScreen.main.scale  // 1x, 2x, or 3x
+            let scale = UIScreen.main.scale
             scaledSize = CGSize(width: scaledSize.width * scale, height: scaledSize.height * scale)
-            print("scaled size: \(scaledSize)")
             scaledImage = originalImage.imageByScaling(toSize: scaledSize)
         }
     }
-    var scaledImage: UIImage? {
+
+    private var scaledImage: UIImage? {
         didSet {
             updateViews()
         }
     }
+    
+    @IBOutlet weak var brightnessSlider: UISlider!
+    @IBOutlet weak var contrastSlider: UISlider!
+    @IBOutlet weak var saturationSlider: UISlider!
+    @IBOutlet weak var imageView: UIImageView!
+    
+    override func viewDidLoad() {
+        super.viewDidLoad()
 
-	@IBOutlet weak var brightnessSlider: UISlider!
-	@IBOutlet weak var contrastSlider: UISlider!
-	@IBOutlet weak var saturationSlider: UISlider!
-	@IBOutlet weak var imageView: UIImageView!
-	
-	override func viewDidLoad() {
-		super.viewDidLoad()
-        let filter = CIFilter(name: "CIColorControls")! //Built in filter.
-        print(filter)
+        // Printing the attributes helps you learn about the filter
+        let filter = CIFilter.colorControls()
+        filter.brightness = 1 // ranges are dependent on implementation / documentation
         print(filter.attributes)
-        //demo purposes
-        originalImage = imageView.image
-	}
-    
-    
-    //    stub with default return. 1
-    private func filterImage(_ image: UIImage) -> UIImage? {
         
-        //UIImage -> CGImage -> CIImage 2
-        guard let cgImage = image.cgImage else {return nil}
+        originalImage = imageView.image
+    }
+    
+    private func filterImage(_ image: UIImage) -> UIImage? {
+        // UIImage -> CGImage -> CIImage
+        guard let cgImage = image.cgImage else { return nil }
+        
         let ciImage = CIImage(cgImage: cgImage)
         
-        //3
-        let filter = CIFilter(name: "CIColorControls")!
-        //built in filtering.
-//        let filter2 = CIFilter.colorControls()
-//        filter2.brightness = 3
-//        filter2.brightness = brightnessSlider.value
-        filter.setValue(ciImage, forKey: kCIInputImageKey) //"inputImage"
-        filter.setValue(saturationSlider.value, forKey: kCIInputSaturationKey)
-        filter.setValue(brightnessSlider.value, forKey: kCIInputBrightnessKey)
-        filter.setValue(contrastSlider.value, forKey: kCIInputContrastKey)
+        // Filtering
+        let filter = CIFilter.colorControls()  // May not work for some custom filters (KVC protocol)
+        filter.inputImage = ciImage
+        filter.brightness = brightnessSlider.value
+        filter.contrast = contrastSlider.value
+        filter.saturation = saturationSlider.value
         
-        //CIImage -> CGImage -> UIImage 4
-        guard let outputCIImage = filter.outputImage else {return nil}
-        //render the image 5
-        guard let outputCGImage = context.createCGImage(outputCIImage,
-                                                        from: CGRect(origin: .zero,
-                                                                     size: image.size)) else {return nil}
+        // CIImage -> CGImage -> UIImage
+        guard let outputCIImage = filter.outputImage else { return nil }
+        
+        // Render image
+        guard let outputCGImage = context.createCGImage(outputCIImage, from: CGRect(origin: .zero, size: image.size)) else { return nil }
+        
         return UIImage(cgImage: outputCGImage)
     }
     
     private func updateViews() {
-        if let scaledImage = scaledImage {
-            imageView.image = filterImage(scaledImage)
-        } else {
-            imageView.image = nil
-        }
+        guard let scaledImage = scaledImage else { return }
+        imageView.image = filterImage(scaledImage)
     }
     
+    // MARK: Actions
+    
+    @IBAction func choosePhotoButtonPressed(_ sender: Any) {
+        presentImagePickerController()
+    }
+
     private func presentImagePickerController() {
         guard UIImagePickerController.isSourceTypeAvailable(.photoLibrary) else {
-            print("Error: The photo library is not available")
+            print("Error: the photo library is not available")
             return
         }
+        
         let imagePicker = UIImagePickerController()
         imagePicker.sourceType = .photoLibrary
         imagePicker.delegate = self
+        
         present(imagePicker, animated: true, completion: nil)
     }
     
-	// MARK: Actions
-	
-	@IBAction func choosePhotoButtonPressed(_ sender: Any) {
-		presentImagePickerController()
-	}
-	
-	@IBAction func savePhotoButtonPressed(_ sender: UIButton) {
+    @IBAction func savePhotoButtonPressed(_ sender: UIButton) {
+        saveAndFilterPhoto()
+    }
+
+    private func saveAndFilterPhoto() {
         guard let originalImage = originalImage else { return }
-        guard let processedImage = filterImage(originalImage.flattened) else {return}
-            PHPhotoLibrary.requestAuthorization { (status) in
-                guard status == .authorized else { return }
-                // Let the library know we are going to make changes
-                PHPhotoLibrary.shared().performChanges({
-                    // Make a new photo creation request
-                    PHAssetCreationRequest.creationRequestForAsset(from: processedImage)
-                }, completionHandler: { (success, error) in
-                    if let error = error {
-                        NSLog("Error saving photo: \(error)")
-                        return
-                    }
-                    DispatchQueue.main.async {
-                        self.presentSuccessfulSaveAlert()
-                    }
-                })
+        
+        guard let processedImage = filterImage(originalImage.flattened) else { return }
+        
+        PHPhotoLibrary.requestAuthorization { (status) in
+            guard status == .authorized else { return } // TODO: Handle other cases
+            
+            PHPhotoLibrary.shared().performChanges({
+                
+                PHAssetChangeRequest.creationRequestForAsset(from: processedImage)
+                
+            }) { (success, error) in
+                if let error = error {
+                    print("Error saving photo: \(error)")
+                    return
+                }
+                DispatchQueue.main.async {
+                    print("Saved photo")
+                }
             }
         }
-        private func presentSuccessfulSaveAlert() {
-            let alert = UIAlertController(title: "Photo Saved!", message: "The photo has been saved to your Photo Library!", preferredStyle: .alert)
-            let okayAction = UIAlertAction(title: "Okay", style: .default, handler: nil)
-            alert.addAction(okayAction)
-            present(alert, animated: true, completion: nil)
-        }
-	
+    }
+    
 
-	// MARK: Slider events
-	
-	@IBAction func brightnessChanged(_ sender: UISlider) {
+    // MARK: Slider events
+    
+    @IBAction func brightnessChanged(_ sender: UISlider) {
         updateViews()
-	}
-	
-	@IBAction func contrastChanged(_ sender: Any) {
+    }
+
+    @IBAction func contrastChanged(_ sender: Any) {
         updateViews()
-	}
-	
-	@IBAction func saturationChanged(_ sender: Any) {
+    }
+
+    @IBAction func saturationChanged(_ sender: Any) {
         updateViews()
-	}
+    }
 }
 
 extension PhotoFilterViewController: UIImagePickerControllerDelegate {
+    
     func imagePickerController(_ picker: UIImagePickerController, didFinishPickingMediaWithInfo info: [UIImagePickerController.InfoKey : Any]) {
+        
         if let image = info[.originalImage] as? UIImage {
             originalImage = image
         }
-        picker.dismiss(animated: true)
+        dismiss(animated: true)
     }
+    
     func imagePickerControllerDidCancel(_ picker: UIImagePickerController) {
-        picker.dismiss(animated: true)
+        dismiss(animated: true)
     }
 }
+
 extension PhotoFilterViewController: UINavigationControllerDelegate {
+    
 }
